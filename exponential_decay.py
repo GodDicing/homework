@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")  # 无图形界面服务器也能运行，必须放在 pyplot 之前
+matplotlib.use("Agg")  # 无图形界面也能运行，必须放在 pyplot 之前
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 def main():
     # 参数
     N0 = 1.0
-    lam = 0.5  # 不要写成 lambda，它是 Python 关键字
+    lam = 0.5  # 不能写成 lambda，它是 Python 关键字
 
     # numpy 离散采样
     t = np.linspace(0, 10, 500)
