@@ -1,4 +1,23 @@
-"""hw-4: radioactive decay via Euler method, OOP + matplotlib."""
+"""
+hw-4 计算物理第二次作业：衰变模型的 Euler 法与 OOP 实现。
+
+分析题回答
+----------
+1. 为什么 error 恒为负？
+   Euler 单步更新因子为 (1 - dt/tau)。
+   对任意 dt > 0，有 1 - dt/tau < exp(-dt/tau)，
+   所以每一步数值解都小于解析解，error = numerical - exact 恒为负，
+   这是系统性误差，不是随机误差。
+
+2. 右图斜率 ≈ 1 说明什么？
+   log(max_abs_error) 与 log(dt) 近似为斜率 1 的直线，
+   即 max_abs_error 正比于 dt，说明 Euler 法是一阶方法。
+
+3. dt = 2.5 时为什么数值解发散？
+   迭代放大因子为 1 - dt/tau。本例 tau = 1，dt = 2.5，
+   |1 - dt/tau| = |1 - 2.5| = 1.5 > 1，
+   每迭代一步振幅放大 1.5 倍，因此数值解振荡并指数发散。
+"""
 
 from pathlib import Path
 
@@ -70,7 +89,7 @@ class Decay:
 
     @property
     def numerical(self):
-        """Euler numerical solution (1.3)-(1.4)."""
+        """Euler numerical solution."""
         t = self.t
         n = np.empty_like(t)
         n[0] = self._N0
@@ -80,7 +99,7 @@ class Decay:
 
     @property
     def exact(self):
-        """Analytical solution (1.2)."""
+        """Analytical solution N0 * exp(-t / tau)."""
         return self._N0 * np.exp(-self.t / self._tau)
 
     @property
@@ -116,26 +135,27 @@ class Decay:
 
 def make_plots(save_path="decay_oop.png"):
     import matplotlib
-    matplotlib.use("Agg")  # headless server
+    matplotlib.use("Agg")  # 无图形界面服务器也能运行
 
     import matplotlib.pyplot as plt
 
+    # 题目指定参数
     N0 = 100.0
-    tau = 2.0
-    t_max = 10.0
+    tau = 1.0
+    t_max = 5.0
+    dt_main = 0.2
 
-    # panel 1: analytical + Euler
-    d_main = Decay(N0, tau, dt=0.5, t_max=t_max)
+    d_main = Decay(N0, tau, dt=dt_main, t_max=t_max)
 
-    # panel 2: signed error for several dt
-    dt_error_values = [0.05, 0.1, 0.25, 0.5, 1.0]
+    # 中间面板：不同 dt 的带符号误差
+    dt_error_values = [0.5, 0.25, 0.2, 0.1, 0.05, 0.025]
     decays_for_error = [
         Decay(N0, tau, dt=dt, t_max=t_max)
         for dt in dt_error_values
     ]
 
-    # panel 3: convergence of max abs error with dt
-    dt_conv = np.array([0.4, 0.2, 0.1, 0.05, 0.025, 0.0125])
+    # 右面板：题目要求的 dt 列表
+    dt_conv = np.array([0.5, 0.25, 0.2, 0.1, 0.05, 0.025])
     max_errs = np.array([
         Decay(N0, tau, dt=float(dt), t_max=t_max).max_abs_error
         for dt in dt_conv
@@ -144,7 +164,7 @@ def make_plots(save_path="decay_oop.png"):
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
     ax1, ax2, ax3 = axes
 
-    # left panel
+    # ---------- 左图：解析解 + Euler 数值解 ----------
     ax1.plot(d_main.t, d_main.exact, "k-", lw=2, label="Analytical")
     ax1.plot(
         d_main.t,
@@ -154,13 +174,17 @@ def make_plots(save_path="decay_oop.png"):
         color="tab:red",
         label=f"Euler, dt={d_main.dt:g}",
     )
-    ax1.set_xlabel("t")
-    ax1.set_ylabel("N(t)")
-    ax1.set_title("Analytical vs Euler")
+    ax1.set_xlabel("t / s")
+    ax1.set_ylabel("N (nuclei)")
+    ax1.set_title(
+        f"Analytical vs Euler\n"
+        f"N0={N0:g}, tau={tau:g} s, dt={dt_main:g} s, t_max={t_max:g} s",
+        fontsize=10,
+    )
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
-    # middle panel
+    # ---------- 中图：带符号误差 ----------
     for d in decays_for_error:
         ax2.plot(
             d.t,
@@ -168,31 +192,34 @@ def make_plots(save_path="decay_oop.png"):
             marker=".",
             ms=3,
             lw=1,
-            label=f"dt={d.dt:g}",
+            label=f"dt={d.dt:g} s",
         )
+
     ax2.axhline(0.0, color="k", lw=0.8)
-    ax2.set_xlabel("t")
-    ax2.set_ylabel("numerical - exact (signed error)")
-    ax2.set_title("Systematic signed error")
-    ax2.legend()
+    ax2.set_xlabel("t / s")
+    ax2.set_ylabel(r"$N_{\mathrm{Euler}} - N_{\mathrm{exact}}$ (nuclei)")
+    ax2.set_title(
+        f"Signed error for different dt\n"
+        f"dt={dt_main:g} s: max |error| = {d_main.max_abs_error:.4f}",
+        fontsize=10,
+    )
+    ax2.legend(fontsize=8)
     ax2.grid(True, alpha=0.3)
 
-    # right panel
+    # ---------- 右图：误差收敛阶 ----------
     ax3.loglog(dt_conv, max_errs, "o-", label="measured max |error|")
     ref = max_errs[0] * (dt_conv / dt_conv[0])
     ax3.loglog(dt_conv, ref, "k--", label="slope 1 reference")
 
     slope = np.polyfit(np.log(dt_conv), np.log(max_errs), 1)[0]
-    ax3.text(
-        0.05,
-        0.08,
-        f"fitted slope = {slope:.2f}",
-        transform=ax3.transAxes,
-        fontsize=9,
+
+    ax3.set_xlabel(r"$\Delta t$ / s")
+    ax3.set_ylabel(r"$\max |N_{\mathrm{Euler}} - N_{\mathrm{exact}}|$ (nuclei)")
+    ax3.set_title(
+        f"First-order convergence\n"
+        f"fitted slope = {slope:.3f}",
+        fontsize=10,
     )
-    ax3.set_xlabel(r"$\Delta t$")
-    ax3.set_ylabel(r"$\max |N_{\mathrm{Euler}} - N_{\mathrm{exact}}|$")
-    ax3.set_title("First-order convergence")
     ax3.grid(True, which="both", ls=":", alpha=0.6)
     ax3.legend()
 
