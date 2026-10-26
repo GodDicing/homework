@@ -66,7 +66,7 @@ COLORS = ["#1f77b4", "#d62728", "#2ca02c"]
 DT_VALUES = [0.04, 0.02, 0.01]
 TRANSIENT_PERIODS = 300
 N_SECTION = 3000                   # 每个截面记录的点数
-N_LONG = 60000                     # 全局图/局部放大/盒计数使用的点数
+N_LONG = 120000                    # 全局图/局部放大/盒计数使用的点数
 LONG_DT = 0.02                     # 长序列步长
 
 # 题目建议的局部窗口
@@ -245,9 +245,11 @@ def box_counting(
         counts[k] = np.unique(keys).size
 
     # 拟合区间：排除盒子太大的端点和点集饱和的小尺度端点。
-    # 上限取 0.25N，尽量避开“每个点占一个盒子”的饱和区。
-    valid = (counts >= 20) & (counts <= 0.25 * len(local))
+    # 上限取 0.12N，尽量只保留中间尺度；若点太少再逐步放宽。
+    valid = (counts >= 20) & (counts <= 0.12 * len(local))
     if valid.sum() < 4:
+        valid = (counts >= 12) & (counts <= 0.30 * len(local))
+    if valid.sum() < 3:
         valid = (counts >= 8) & (counts <= 0.60 * len(local))
     if valid.sum() < 3:
         valid = np.ones_like(counts, dtype=bool)
