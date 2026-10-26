@@ -66,7 +66,7 @@ COLORS = ["#1f77b4", "#d62728", "#2ca02c"]
 DT_VALUES = [0.04, 0.02, 0.01]
 TRANSIENT_PERIODS = 300
 N_SECTION = 3000                   # 每个截面记录的点数
-N_LONG = 30000                     # 全局图/局部放大/盒计数使用的点数
+N_LONG = 60000                     # 全局图/局部放大/盒计数使用的点数
 LONG_DT = 0.02                     # 长序列步长
 
 # 题目建议的局部窗口
@@ -245,9 +245,10 @@ def box_counting(
         counts[k] = np.unique(keys).size
 
     # 拟合区间：排除盒子太大的端点和点集饱和的小尺度端点。
-    valid = (counts >= 20) & (counts <= 0.35 * len(local))
+    # 上限取 0.25N，尽量避开“每个点占一个盒子”的饱和区。
+    valid = (counts >= 20) & (counts <= 0.25 * len(local))
     if valid.sum() < 4:
-        valid = (counts >= 8) & (counts <= 0.75 * len(local))
+        valid = (counts >= 8) & (counts <= 0.60 * len(local))
     if valid.sum() < 3:
         valid = np.ones_like(counts, dtype=bool)
 
@@ -599,6 +600,114 @@ def build_analysis(box: dict) -> str:
     )
 
 
+def build_markdown_report(
+    box: dict,
+    zoom2_bounds: tuple[float, float, float, float],
+    figure_paths: list[Path],
+) -> str:
+    """生成独立的 Markdown 计算报告（运行程序时自动写出）。"""
+    x3, x4, y3, y4 = zoom2_bounds
+    d_b = box["D_B"]
+    n_local = box["n_local"]
+    fit_count = box["fit_count"]
+    fit_eps_min = box["fit_eps_min"]
+    fit_eps_max = box["fit_eps_max"]
+    links = "\n\n".join(
+        f"![{p.stem}]({p.as_posix()})" for p in figure_paths
+    )
+    analysis = build_analysis(box)
+
+    return f"""# 受迫阻尼非线性单摆的庞加莱截面与奇异吸引子
+
+## 1. 模型与数值方法
+
+运动方程
+
+$$
+\\frac{{d^2\\theta}}{{dt^2}}
+=-\\frac{{g}}{{\\ell}}\\sin\\theta-q\\frac{{d\\theta}}{{dt}}
++F_D\\sin(\\Omega_D t).
+$$
+
+取
+
+$$
+g=9.8,\\quad \\ell=9.8,\\quad q=0.5,\\quad
+F_D=1.2,\\quad \\Omega_D=\\frac{{2}}{{3}},
+$$
+
+因此 $g/\\ell=1$，驱动力周期为
+
+$$
+T_D=\\frac{{2\\pi}}{{\\Omega_D}}=3\\pi\\approx9.42478\\ \\mathrm{{s}}.
+$$
+
+使用 Euler–Cromer 方法：
+
+$$
+\\omega_{{i+1}}
+=\\omega_i+
+\\left[-\\frac{{g}}{{\\ell}}\\sin\\theta_i-q\\omega_i
++F_D\\sin(\\Omega_D t_i)\\right]\\Delta t,
+$$
+
+$$
+\\theta_{{i+1}}=\\theta_i+\\omega_{{i+1}}\\Delta t,
+\\qquad
+t_{{i+1}}=t_i+\\Delta t.
+$$
+
+每一步后将 $\\theta$ 约化到 $[-\\pi,\\pi]$。舍弃前 $300T_D$ 的暂态，在
+$t_n=nT_D$ 处对相邻 Euler 点作线性插值，得到严格同相位的庞加莱截面。
+
+## 2. 计算参数
+
+- 初始条件：$(0.2,0)$、$(0.8,0)$、$(-1.0,0.5)$；
+- 暂态：$300T_D\\approx2827.43\\ \\mathrm{{s}}$；
+- 每个截面采样点数：$3000$；
+- 时间步长：$0.04,\\ 0.02,\\ 0.01\\ \\mathrm{{s}}$；
+- 长序列：$\\Delta t={LONG_DT}$，$N={N_LONG}$ 个庞加莱点；
+- 第一级放大窗口：$2.0<\\theta<2.7$，$-1.5<\\omega<1.5$；
+- 第二级窗口：$[{x3:.4f},{x4:.4f}]\\times[{y3:.4f},{y4:.4f}]$。
+
+## 3. 图表
+
+{links}
+
+## 4. 结果摘要
+
+三组初值经过暂态后进入同一个有界吸引子。截面不是有限个孤立点，也不是
+简单闭合曲线，而是具有弯曲条带、细丝和裂隙的复杂集合；不同初值的整体
+轮廓一致而具体相点不重合。
+
+三种步长下，吸引子的外轮廓、主要分支和大空隙基本一致；局部细丝在
+$\\Delta t=0.04$ 时较粗，$0.02$ 与 $0.01$ 更接近。这说明宏观结构对
+离散化不敏感，而极细结构已接近当前数值分辨率。
+
+在局部窗口 $2.0<\\theta<2.7,\\ -1.5<\\omega<1.5$ 中，盒计数得到
+
+$$
+D_B={d_b:.4f}
+$$
+
+（局部点数 ${n_local}$，拟合尺度点数 ${fit_count}$，
+拟合 $\\varepsilon$ 范围约
+$[{fit_eps_min:.3g},{fit_eps_max:.3g}]$）。
+该值不是整数；有限采样和小尺度饱和会影响其精度。
+
+## 5. 结果分析与讨论
+
+{analysis}
+
+## 6. 复现
+
+```bash
+pip install -r requirements.txt
+python forced_pendulum_chaos.py
+```
+"""
+
+
 def main() -> None:
     outdir = Path("figures")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -696,7 +805,18 @@ def main() -> None:
 
     analysis = build_analysis(box)
     print("\n" + analysis)
+
+    report_path = Path("report.md")
+    report_path.write_text(
+        build_markdown_report(
+            box,
+            zoom2_bounds,
+            [fig1, fig2, fig3, fig4],
+        ),
+        encoding="utf-8",
+    )
     print(f"Saved summary: {results_path}")
+    print(f"Saved report:  {report_path}")
     print("Done.")
 
 
